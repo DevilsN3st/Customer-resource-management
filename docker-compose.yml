@@ -1,0 +1,38 @@
+services:
+  db:
+    image: mongo:3.4
+    container_name: mongodb_server
+    env_file: './dev.env'
+    command:
+      - '--auth'
+      - '-f'
+      - '/etc/mongod.conf'
+    volumes:
+      - '/home/sa/data/mongod.conf:/etc/mongod.conf'
+      - '/home/sa/data/db:/data/db'
+    ports:
+      - '37017:27017'
+  app:
+    container_name: crm-app
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: dev
+    ports:
+      - "8080:8080"
+    volumes:
+      - .:/app
+    env_file:
+      - .env.local
+    depends_on:
+      - db
+    networks:
+      - crm-network
+    command: air ./cmd/main.go -b 0.0.0.0
+
+volumes:
+  mongo_data:
+
+networks:
+  crm-network:
+    driver: bridge

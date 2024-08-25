@@ -1,0 +1,91 @@
+package application
+
+import (
+	"context"
+
+	"github.com/icrxz/crm-api-core/internal/domain"
+)
+
+type commentService struct {
+	commentRepository    domain.CommentRepository
+	attachmentRepository domain.AttachmentRepository
+	attachmentBucket     domain.AttachmentBucket
+}
+
+type CommentService interface {
+	Create(ctx context.Context, comment domain.Comment) (string, error)
+	GetByID(ctx context.Context, commentID string) (*domain.Comment, error)
+	GetByTicketID(ctx context.Context, ticketID string) ([]domain.Comment, error)
+}
+
+func NewCommentService(
+	commentRepository domain.CommentRepository,
+	attachmentRepository domain.AttachmentRepository,
+	attachmentBucket domain.AttachmentBucket,
+) CommentService {
+	return &commentService{
+		commentRepository:    commentRepository,
+		attachmentRepository: attachmentRepository,
+		attachmentBucket:     attachmentBucket,
+	}
+}
+
+func (s *commentService) Create(ctx context.Context, comment domain.Comment) (string, error) {
+	commentID, err := s.commentRepository.Create(ctx, comment)
+	if err != nil {
+		return "", err
+	}
+
+	if comment.Attachments != nil && len(comment.Attachments) > 0 {
+		for idx := range comment.Attachments {
+			comment.Attachments[idx].CommentID = commentID
+		}
+
+		err = s.attachmentRepository.SaveBatch(ctx, comment.Attachments)
+		if err != nil {
+			return commentID, err
+		}
+	}
+
+	return commentID, nil
+}
+
+func (s *commentService) GetByID(ctx context.Context, commentID string) (*domain.Comment, error) {
+	if commentID == "" {
+		return nil, domain.NewValidationError("commentID is required", nil)
+	}
+
+	comment, err := s.commentRepository.GetByID(ctx, commentID)
+	if err != nil {
+		return nil, err
+	}
+
+	comment.Attachments, err = s.attachmentRepository.GetByCommentID(ctx, commentID)
+	if err != nil {
+		return nil, err
+	}
+
+	return comment, nil
+}
+
+func (s *commentService) GetByTicketID(ctx context.Context, ticketID string) ([]domain.Comment, error) {
+	if ticketID == "" {
+		return nil, domain.NewValidationError("ticketID is required", nil)
+	}
+
+	comments, err := s.commentRepository.GetByTicketID(ctx, ticketID)
+	if err != nil {
+		return nil, err
+	}
+
+	for idx, comment := range comments {
+		attachments, err := s.attachmentRepository.GetByCommentID(ctx, comment.CommentID)
+		if err != nil {
+			return nil, err
+		}
+
+		comments[idx].Attachments = attachments
+	}
+
+	return comments, nil
+}
